@@ -1,7 +1,8 @@
 const path = require("path");
 const crypto = require("crypto");
+const fs = require("fs");
 const http = require("http");
-const { app, BrowserWindow, ipcMain, Menu, shell, nativeTheme } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, shell, nativeTheme, safeStorage } = require("electron");
 
 let mainWindow;
 let spotifyAuth = null;
@@ -12,9 +13,11 @@ const spotifyScopes = [
   "user-read-currently-playing",
   "user-read-playback-state",
   "user-modify-playback-state",
+  "streaming",
   "playlist-read-private",
   "playlist-read-collaborative",
-  "user-read-private"
+  "user-read-private",
+  "user-read-email"
 ];
 
 const modeProfiles = {
@@ -110,6 +113,50 @@ function createPkcePair() {
   const verifier = base64Url(crypto.randomBytes(64));
   const challenge = base64Url(crypto.createHash("sha256").update(verifier).digest());
   return { verifier, challenge };
+}
+
+function spotifyTokenPath() {
+  return path.join(app.getPath("userData"), "spotify-auth.json");
+}
+
+function saveSpotifyAuth() {
+  if (!spotifyAuth?.refreshToken) return;
+
+  const payload = JSON.stringify({
+    clientId: spotifyAuth.clientId,
+    refreshToken: spotifyAuth.refreshToken,
+    expiresAt: spotifyAuth.expiresAt || 0
+  });
+
+  const tokenPayload = safeStorage.isEncryptionAvailable()
+    ? { encrypted: true, payload: safeStorage.encryptString(payload).toString("base64") }
+    : { encrypted: false, payload };
+
+  fs.writeFileSync(spotifyTokenPath(), JSON.stringify(tokenPayload), "utf8");
+}
+
+function loadSpotifyAuth() {
+  try {
+    const filePath = spotifyTokenPath();
+    if (!fs.existsSync(filePath)) return;
+
+    const tokenPayload = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const raw = tokenPayload.encrypted
+      ? safeStorage.decryptString(Buffer.from(tokenPayload.payload, "base64"))
+      : tokenPayload.payload;
+    const parsed = JSON.parse(raw);
+
+    if (parsed.clientId && parsed.refreshToken) {
+      spotifyAuth = {
+        clientId: parsed.clientId,
+        refreshToken: parsed.refreshToken,
+        accessToken: null,
+        expiresAt: 0
+      };
+    }
+  } catch (error) {
+    console.warn("Could not load Spotify token store:", error.message);
+  }
 }
 
 function closeOauthServer() {
@@ -223,30 +270,65 @@ async function refreshSpotifyToken() {
   spotifyAuth.accessToken = token.access_token;
   spotifyAuth.refreshToken = token.refresh_token || spotifyAuth.refreshToken;
   spotifyAuth.expiresAt = Date.now() + token.expires_in * 1000 - 30_000;
+  saveSpotifyAuth();
 }
 
-async function spotifyFetch(pathname) {
+async function ensureSpotifyAccessToken() {
   if (!spotifyAuth?.accessToken) {
-    return { connected: false };
+    if (!spotifyAuth?.refreshToken) {
+      return null;
+    }
+    await refreshSpotifyToken();
   }
 
   if (Date.now() >= spotifyAuth.expiresAt) {
     await refreshSpotifyToken();
   }
 
-  let response = await fetch(`https://api.spotify.com/v1${pathname}`, {
+  return spotifyAuth.accessToken;
+}
+
+async function readSpotifyError(response) {
+  const text = await response.text();
+
+  if (!text) {
+    return `${response.status} ${response.statusText}`;
+  }
+
+  try {
+    const body = JSON.parse(text);
+    return body.error?.message || body.error_description || `${response.status} ${response.statusText}`;
+  } catch (_error) {
+    return text.slice(0, 240);
+  }
+}
+
+async function spotifyApi(pathname, options = {}) {
+  const accessToken = await ensureSpotifyAccessToken();
+  if (!accessToken) {
+    return { connected: false };
+  }
+
+  const method = options.method || "GET";
+  const query = options.query ? `?${new URLSearchParams(options.query).toString()}` : "";
+  const init = {
+    method,
     headers: {
       Authorization: `Bearer ${spotifyAuth.accessToken}`
     }
-  });
+  };
+
+  if (options.body !== undefined) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(options.body);
+  }
+
+  let response = await fetch(`https://api.spotify.com/v1${pathname}${query}`, init);
 
   if (response.status === 401) {
     await refreshSpotifyToken();
-    response = await fetch(`https://api.spotify.com/v1${pathname}`, {
-      headers: {
-        Authorization: `Bearer ${spotifyAuth.accessToken}`
-      }
-    });
+    init.headers.Authorization = `Bearer ${spotifyAuth.accessToken}`;
+    response = await fetch(`https://api.spotify.com/v1${pathname}${query}`, init);
   }
 
   if (response.status === 204) {
@@ -254,13 +336,73 @@ async function spotifyFetch(pathname) {
   }
 
   if (!response.ok) {
-    throw new Error(`Spotify API failed: ${response.status}`);
+    const detail = await readSpotifyError(response);
+    throw new Error(`Spotify API ${response.status}: ${detail}`);
   }
 
   return response.json();
 }
 
+async function spotifyCommand(command) {
+  const deviceQuery = command.deviceId ? { device_id: command.deviceId } : undefined;
+
+  if (command.type === "play") {
+    const body = {};
+    if (command.contextUri) body.context_uri = command.contextUri;
+    if (Array.isArray(command.uris) && command.uris.length) body.uris = command.uris;
+    if (Number.isFinite(command.positionMs)) body.position_ms = command.positionMs;
+    return spotifyApi("/me/player/play", {
+      method: "PUT",
+      query: deviceQuery,
+      body: Object.keys(body).length ? body : undefined
+    });
+  }
+
+  if (command.type === "pause") {
+    return spotifyApi("/me/player/pause", { method: "PUT", query: deviceQuery });
+  }
+
+  if (command.type === "next") {
+    return spotifyApi("/me/player/next", { method: "POST", query: deviceQuery });
+  }
+
+  if (command.type === "previous") {
+    return spotifyApi("/me/player/previous", { method: "POST", query: deviceQuery });
+  }
+
+  if (command.type === "shuffle") {
+    return spotifyApi("/me/player/shuffle", {
+      method: "PUT",
+      query: { state: String(Boolean(command.state)), ...(deviceQuery || {}) }
+    });
+  }
+
+  if (command.type === "repeat") {
+    return spotifyApi("/me/player/repeat", {
+      method: "PUT",
+      query: { state: command.state || "off", ...(deviceQuery || {}) }
+    });
+  }
+
+  if (command.type === "volume") {
+    return spotifyApi("/me/player/volume", {
+      method: "PUT",
+      query: { volume_percent: String(command.volumePercent || 0), ...(deviceQuery || {}) }
+    });
+  }
+
+  if (command.type === "transfer" && command.deviceId) {
+    return spotifyApi("/me/player", {
+      method: "PUT",
+      body: { device_ids: [command.deviceId], play: Boolean(command.play) }
+    });
+  }
+
+  throw new Error(`Unsupported Spotify command: ${command.type}`);
+}
+
 app.whenReady().then(() => {
+  loadSpotifyAuth();
   createWindow();
 
   app.on("activate", () => {
@@ -320,12 +462,13 @@ ipcMain.handle("tempo:spotify-login", async (_event, clientId) => {
     refreshToken: token.refresh_token,
     expiresAt: Date.now() + token.expires_in * 1000 - 30_000
   };
+  saveSpotifyAuth();
 
   return { connected: true };
 });
 
 ipcMain.handle("tempo:spotify-current-playback", async () => {
-  const playback = await spotifyFetch("/me/player");
+  const playback = await spotifyApi("/me/player");
 
   if (!playback.connected) {
     return playback;
@@ -358,5 +501,38 @@ ipcMain.handle("tempo:spotify-current-playback", async () => {
       uri: item.uri,
       externalUrl: item.external_urls?.spotify
     }
+  };
+});
+
+ipcMain.handle("tempo:spotify-access-token", async () => {
+  const accessToken = await ensureSpotifyAccessToken();
+  return {
+    connected: Boolean(accessToken),
+    accessToken
+  };
+});
+
+ipcMain.handle("tempo:spotify-command", async (_event, command) => {
+  await spotifyCommand(command || {});
+  return { ok: true };
+});
+
+ipcMain.handle("tempo:spotify-playlists", async () => {
+  const data = await spotifyApi("/me/playlists", { query: { limit: "20" } });
+
+  if (!data.connected) {
+    return data;
+  }
+
+  return {
+    connected: true,
+    items: (data.items || []).map((playlist) => ({
+      id: playlist.id,
+      name: playlist.name,
+      uri: playlist.uri,
+      tracks: playlist.tracks?.total || 0,
+      artwork: Array.isArray(playlist.images) && playlist.images.length ? playlist.images[0].url : null,
+      externalUrl: playlist.external_urls?.spotify || null
+    }))
   };
 });

@@ -2,36 +2,13 @@
   const app = document.querySelector(".app-shell");
   const canvas = document.getElementById("tempo-canvas");
   const ctx = canvas.getContext("2d", { alpha: true });
+  const defaultSpotifyClientId = "ac068db0c6714a82b3d8de64da302fba";
 
   const tracks = [
-    {
-      title: "Midnight Drive",
-      artist: "MOON",
-      bpm: 78,
-      energy: 0.64,
-      duration: 206
-    },
-    {
-      title: "Night Drive",
-      artist: "KAIZEN",
-      bpm: 92,
-      energy: 0.58,
-      duration: 235
-    },
-    {
-      title: "Stargazing",
-      artist: "EXILES",
-      bpm: 112,
-      energy: 0.72,
-      duration: 261
-    },
-    {
-      title: "Fragments",
-      artist: "OKASHI",
-      bpm: 86,
-      energy: 0.51,
-      duration: 164
-    }
+    { title: "Midnight Drive", artist: "MOON", bpm: 78, energy: 0.64, duration: 206, uri: null },
+    { title: "Night Drive", artist: "KAIZEN", bpm: 92, energy: 0.58, duration: 235, uri: null },
+    { title: "Stargazing", artist: "EXILES", bpm: 112, energy: 0.72, duration: 261, uri: null },
+    { title: "Fragments", artist: "OKASHI", bpm: 86, energy: 0.51, duration: 164, uri: null }
   ];
 
   const sessions = [
@@ -43,11 +20,11 @@
   ];
 
   const playlists = [
-    { name: "Lofi Essentials", tracks: 24, active: true },
-    { name: "Focus Flow", tracks: 31 },
-    { name: "Cinematic", tracks: 18 },
-    { name: "Dark Ambient", tracks: 27 },
-    { name: "Chill Vibes", tracks: 35 }
+    { name: "Lofi Essentials", tracks: 24, active: true, contextUri: null, artwork: null, externalUrl: null },
+    { name: "Focus Flow", tracks: 31, contextUri: null, artwork: null, externalUrl: null },
+    { name: "Cinematic", tracks: 18, contextUri: null, artwork: null, externalUrl: null },
+    { name: "Dark Ambient", tracks: 27, contextUri: null, artwork: null, externalUrl: null },
+    { name: "Chill Vibes", tracks: 35, contextUri: null, artwork: null, externalUrl: null }
   ];
 
   const presets = [
@@ -70,10 +47,17 @@
     { id: "space-drift", label: "Space" }
   ];
 
+  const statRanges = {
+    week: { time: "12H 42M", delta: "+18% from last week", bars: [56, 48, 38, 64, 78, 70, 84], sessions: 14, streak: "7 days", avg: 87 },
+    month: { time: "49H 05M", delta: "+9% from last month", bars: [42, 62, 58, 71, 69, 82, 77], sessions: 48, streak: "16 days", avg: 84 },
+    all: { time: "318H", delta: "prime flow archive", bars: [62, 74, 68, 80, 76, 88, 91], sessions: 312, streak: "41 days", avg: 89 }
+  };
+
   const state = {
     running: false,
     sessionIndex: 0,
     sessionName: "Deep Work",
+    activePlaylistIndex: 0,
     trackIndex: 0,
     duration: 45 * 60,
     remaining: 45 * 60,
@@ -84,7 +68,19 @@
     environment: "deep-work",
     windowMode: "ultrawide",
     completed: false,
-    milestone: null
+    milestone: null,
+    shuffle: false,
+    repeat: "off",
+    liked: true,
+    volume: 72,
+    spotify: {
+      connected: false,
+      deviceId: null,
+      sdkReady: false,
+      sdkError: null,
+      player: null,
+      isPlaying: false
+    }
   };
 
   const el = {
@@ -97,6 +93,11 @@
     playPause: document.getElementById("play-pause"),
     reset: document.getElementById("timer-reset"),
     add: document.getElementById("timer-add"),
+    shuffle: document.getElementById("shuffle"),
+    repeat: document.getElementById("repeat"),
+    previous: document.getElementById("previous-track"),
+    next: document.getElementById("next-track"),
+    volume: document.getElementById("volume-slider"),
     trackMain: document.getElementById("track-title-main"),
     artistMain: document.getElementById("track-artist-main"),
     trackTitle: document.getElementById("track-title"),
@@ -108,6 +109,7 @@
     trackLength: document.getElementById("track-length"),
     trackProgress: document.getElementById("track-progress-bar"),
     albumArt: document.getElementById("album-art"),
+    playlistTitle: document.querySelector(".playlist-card h2"),
     focusLevel: document.getElementById("focus-level"),
     focusMeter: document.getElementById("focus-meter"),
     avgFocus: document.getElementById("avg-focus"),
@@ -122,7 +124,13 @@
     barChart: document.getElementById("bar-chart"),
     completion: document.getElementById("completion-sequence"),
     completionClose: document.getElementById("completion-close"),
-    spotifyConnect: document.getElementById("spotify-connect")
+    spotifyConnect: document.getElementById("spotify-connect"),
+    heart: document.querySelector(".heart-button"),
+    newSession: document.querySelector(".sessions-panel .line-button.small"),
+    newPlaylist: document.querySelector(".playlists-panel .line-button.small"),
+    viewPlaylist: document.querySelector(".queue-block .wide-button"),
+    statHero: document.querySelector(".stat-hero"),
+    statRow: document.querySelector(".stat-row")
   };
 
   const particles = Array.from({ length: 180 }, (_, index) => ({
@@ -153,36 +161,40 @@
       return `
         <button class="session-row${active}" data-session-index="${index}" style="--session-angle:${Math.round(session.progress * 360)}deg" type="button">
           <i class="session-ring"></i>
-          <span><strong>${session.name}</strong><span>${session.minutes} min</span></span>
+          <span><strong>${escapeHtml(session.name)}</strong><span>${session.minutes} min</span></span>
           <b>PL</b>
         </button>
       `;
     }).join("");
 
     el.playlistList.innerHTML = playlists.map((playlist, index) => {
-      const active = playlist.active ? " active" : "";
+      const active = index === state.activePlaylistIndex ? " active" : "";
+      const artStyle = playlist.artwork ? ` style="background-image:url('${escapeAttribute(playlist.artwork)}')"` : "";
       return `
         <button class="playlist-row${active}" data-playlist-index="${index}" type="button">
-          <i class="mini-art"></i>
-          <span><strong>${playlist.name}</strong><span>${playlist.tracks} tracks</span></span>
+          <i class="mini-art${playlist.artwork ? " spotify-artwork" : ""}"${artStyle}></i>
+          <span><strong>${escapeHtml(playlist.name)}</strong><span>${playlist.tracks} tracks</span></span>
           <b>AR</b>
         </button>
       `;
     }).join("");
 
-    el.queueList.innerHTML = tracks.slice(1).map((track) => `
-      <div class="queue-item">
-        <i class="mini-art"></i>
-        <span><strong>${track.title}</strong><span>${track.artist}</span></span>
-        <time>${formatTrackTime(track.duration)}</time>
-      </div>
-    `).join("");
+    el.queueList.innerHTML = tracks.map((track, index) => {
+      const active = index === state.trackIndex ? " active" : "";
+      return `
+        <button class="queue-item${active}" data-track-index="${index}" type="button">
+          <i class="mini-art"></i>
+          <span><strong>${escapeHtml(track.title)}</strong><span>${escapeHtml(track.artist)}</span></span>
+          <time>${formatTrackTime(track.duration)}</time>
+        </button>
+      `;
+    }).join("");
 
     el.presetGrid.innerHTML = presets.map((preset, index) => {
-      const active = index === 0 ? " active" : "";
+      const active = preset.name === state.sessionName && preset.minutes * 60 === state.duration ? " active" : "";
       return `
         <button class="preset-card${active}" data-preset-index="${index}" type="button">
-          <span><strong>${preset.name}</strong><span>${preset.minutes} min</span></span>
+          <span><strong>${escapeHtml(preset.name)}</strong><span>${preset.minutes} min</span></span>
           <i class="preset-orbit" style="--preset-angle:${preset.angle}deg"></i>
         </button>
       `;
@@ -192,39 +204,33 @@
       const active = environment.id === state.environment ? " active" : "";
       return `<button class="${active}" data-environment="${environment.id}" type="button">${environment.label}</button>`;
     }).join("");
-
-    el.barChart.innerHTML = [56, 48, 38, 64, 78, 70, 84].map((heightValue) => (
-      `<span style="height:${heightValue}%"></span>`
-    )).join("");
   }
 
   function attachEvents() {
-    el.playPause.addEventListener("click", () => {
-      state.running = !state.running;
-      state.completed = false;
-      updateStaticDom();
+    el.playPause.addEventListener("click", togglePlayback);
+    el.reset.addEventListener("click", resetTimer);
+    el.add.addEventListener("click", addFiveMinutes);
+    el.next.addEventListener("click", () => skipTrack(1));
+    el.previous.addEventListener("click", () => skipTrack(-1));
+    el.shuffle.addEventListener("click", toggleShuffle);
+    el.repeat.addEventListener("click", cycleRepeat);
+    el.volume.addEventListener("input", updateVolume);
+    el.spotifyConnect.addEventListener("click", connectSpotify);
+    el.editSession.addEventListener("click", editActiveSession);
+    el.sessionTitle.addEventListener("click", editActiveSession);
+    el.newSession.addEventListener("click", createSession);
+    el.newPlaylist.addEventListener("click", createPlaylist);
+    el.heart.addEventListener("click", toggleHeart);
+    el.viewPlaylist.addEventListener("click", openActivePlaylist);
+    el.completionClose.addEventListener("click", () => {
+      el.completion.hidden = true;
     });
-
-    el.reset.addEventListener("click", () => {
-      state.remaining = state.duration;
-      state.completed = false;
-      state.running = false;
-      updateStaticDom();
-    });
-
-    el.add.addEventListener("click", () => {
-      state.duration += 5 * 60;
-      state.remaining += 5 * 60;
-      updateStaticDom();
-    });
-
-    document.getElementById("next-track").addEventListener("click", () => changeTrack(1));
-    document.getElementById("previous-track").addEventListener("click", () => changeTrack(-1));
 
     document.querySelectorAll(".nav-item").forEach((button) => {
       button.addEventListener("click", () => {
         document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
+        focusPanel(button.dataset.panel);
       });
     });
 
@@ -232,10 +238,28 @@
       button.addEventListener("click", () => setWindowMode(button.dataset.windowMode));
     });
 
+    document.querySelectorAll(".segmented button").forEach((button, index) => {
+      const ranges = ["week", "month", "all"];
+      button.dataset.range = ranges[index];
+      button.addEventListener("click", () => setStatRange(button.dataset.range));
+    });
+
     el.sessionList.addEventListener("click", (event) => {
       const row = event.target.closest("[data-session-index]");
       if (!row) return;
       selectSession(Number(row.dataset.sessionIndex));
+    });
+
+    el.playlistList.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-playlist-index]");
+      if (!row) return;
+      selectPlaylist(Number(row.dataset.playlistIndex));
+    });
+
+    el.queueList.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-track-index]");
+      if (!row) return;
+      selectTrack(Number(row.dataset.trackIndex));
     });
 
     el.presetGrid.addEventListener("click", (event) => {
@@ -248,12 +272,6 @@
       const button = event.target.closest("[data-environment]");
       if (!button) return;
       setEnvironment(button.dataset.environment);
-    });
-
-    el.spotifyConnect.addEventListener("click", connectSpotify);
-
-    el.completionClose.addEventListener("click", () => {
-      el.completion.hidden = true;
     });
 
     if (window.tempoDesktop) {
@@ -278,6 +296,7 @@
     setEnvironment(session.environment);
     mountLists();
     updateStaticDom();
+    setSourceStatus(`${session.name} armed`);
   }
 
   function selectPreset(index) {
@@ -287,11 +306,189 @@
     state.remaining = state.duration;
     state.completed = false;
     state.running = false;
-    document.querySelectorAll(".preset-card").forEach((card) => card.classList.remove("active"));
-    const selected = document.querySelector(`[data-preset-index="${index}"]`);
-    if (selected) selected.classList.add("active");
-    updateSessionLabels(preset.name, preset.minutes);
+    mountLists();
     updateStaticDom();
+    setSourceStatus(`${preset.name} preset`);
+  }
+
+  function selectPlaylist(index) {
+    state.activePlaylistIndex = index;
+    playlists.forEach((playlist, playlistIndex) => {
+      playlist.active = playlistIndex === index;
+    });
+    mountLists();
+    updateStaticDom();
+    setSourceStatus(`${playlists[index].name} selected`);
+  }
+
+  function selectTrack(index) {
+    state.trackIndex = index;
+    state.trackElapsed = 0;
+    const track = tracks[index];
+    state.bpm = track.bpm || state.bpm;
+    state.energy = track.energy || state.energy;
+    mountLists();
+    updateStaticDom();
+    if (state.spotify.connected && track.uri) {
+      playSpotify({ uris: [track.uri] });
+    }
+  }
+
+  function editActiveSession() {
+    const name = window.prompt("Session name", state.sessionName);
+    if (name === null) return;
+
+    const minutesText = window.prompt("Session length in minutes", String(Math.round(state.duration / 60)));
+    if (minutesText === null) return;
+
+    const minutes = clamp(Number.parseInt(minutesText, 10) || Math.round(state.duration / 60), 1, 999);
+    state.sessionName = name.trim() || state.sessionName;
+    state.duration = minutes * 60;
+    state.remaining = Math.min(state.remaining, state.duration);
+    sessions[state.sessionIndex] = { ...sessions[state.sessionIndex], name: state.sessionName, minutes };
+    mountLists();
+    updateStaticDom();
+  }
+
+  function createSession() {
+    const name = window.prompt("New session name", "Focus Block");
+    if (!name) return;
+
+    const minutes = clamp(Number.parseInt(window.prompt("Minutes", "25") || "25", 10), 1, 999);
+    sessions.unshift({ name: name.trim(), minutes, progress: 0, environment: state.environment });
+    state.sessionIndex = 0;
+    state.sessionName = name.trim();
+    state.duration = minutes * 60;
+    state.remaining = state.duration;
+    mountLists();
+    updateStaticDom();
+  }
+
+  function createPlaylist() {
+    const name = window.prompt("Playlist label", "New Focus Source");
+    if (!name) return;
+
+    playlists.unshift({ name: name.trim(), tracks: 0, active: true, contextUri: null, artwork: null, externalUrl: null });
+    state.activePlaylistIndex = 0;
+    mountLists();
+    updateStaticDom();
+  }
+
+  function toggleHeart() {
+    state.liked = !state.liked;
+    el.heart.classList.toggle("active", state.liked);
+    el.heart.textContent = state.liked ? "HV" : "SV";
+    setSourceStatus(state.liked ? "Track saved" : "Track unsaved");
+  }
+
+  function openActivePlaylist() {
+    const playlist = playlists[state.activePlaylistIndex];
+    if (playlist?.externalUrl) {
+      openExternal(playlist.externalUrl);
+      return;
+    }
+    setSourceStatus("No playlist URL");
+  }
+
+  function resetTimer() {
+    state.remaining = state.duration;
+    state.completed = false;
+    state.running = false;
+    updateStaticDom();
+    setSourceStatus("Timer reset");
+  }
+
+  function addFiveMinutes() {
+    state.duration += 5 * 60;
+    state.remaining += 5 * 60;
+    updateStaticDom();
+    setSourceStatus("+5 min added");
+  }
+
+  async function togglePlayback() {
+    if (state.running) {
+      state.running = false;
+      await pauseSpotify();
+      updateStaticDom();
+      return;
+    }
+
+    state.running = true;
+    state.completed = false;
+    updateStaticDom();
+    await playSpotify();
+  }
+
+  async function skipTrack(direction) {
+    if (state.spotify.connected) {
+      try {
+        await window.tempoDesktop.spotifyCommand({
+          type: direction > 0 ? "next" : "previous",
+          deviceId: state.spotify.deviceId
+        });
+        await pullSpotifyPlayback();
+        return;
+      } catch (error) {
+        showSpotifyError(error);
+      }
+    }
+
+    changeLocalTrack(direction);
+  }
+
+  function changeLocalTrack(direction) {
+    state.trackIndex = (state.trackIndex + direction + tracks.length) % tracks.length;
+    state.trackElapsed = 0;
+    const track = tracks[state.trackIndex];
+    state.bpm = track.bpm || state.bpm;
+    state.energy = track.energy || state.energy;
+    mountLists();
+    updateStaticDom();
+  }
+
+  async function toggleShuffle() {
+    state.shuffle = !state.shuffle;
+    el.shuffle.classList.toggle("active", state.shuffle);
+    if (state.spotify.connected) {
+      try {
+        await window.tempoDesktop.spotifyCommand({ type: "shuffle", state: state.shuffle, deviceId: state.spotify.deviceId });
+      } catch (error) {
+        showSpotifyError(error);
+      }
+    }
+    setSourceStatus(state.shuffle ? "Shuffle on" : "Shuffle off");
+  }
+
+  async function cycleRepeat() {
+    state.repeat = state.repeat === "off" ? "context" : state.repeat === "context" ? "track" : "off";
+    el.repeat.classList.toggle("active", state.repeat !== "off");
+    el.repeat.textContent = state.repeat === "track" ? "R1" : state.repeat === "context" ? "RP" : "RP";
+    if (state.spotify.connected) {
+      try {
+        await window.tempoDesktop.spotifyCommand({ type: "repeat", state: state.repeat, deviceId: state.spotify.deviceId });
+      } catch (error) {
+        showSpotifyError(error);
+      }
+    }
+    setSourceStatus(`Repeat ${state.repeat}`);
+  }
+
+  async function updateVolume() {
+    state.volume = Number(el.volume.value);
+    if (state.spotify.player?.setVolume) {
+      state.spotify.player.setVolume(state.volume / 100);
+    }
+    if (state.spotify.connected) {
+      try {
+        await window.tempoDesktop.spotifyCommand({
+          type: "volume",
+          volumePercent: state.volume,
+          deviceId: state.spotify.deviceId
+        });
+      } catch (error) {
+        showSpotifyError(error);
+      }
+    }
   }
 
   function setEnvironment(id) {
@@ -300,6 +497,7 @@
     document.querySelectorAll("[data-environment]").forEach((button) => {
       button.classList.toggle("active", button.dataset.environment === id);
     });
+    setSourceStatus(`${environmentName(id)} environment`);
   }
 
   function setWindowMode(mode) {
@@ -317,13 +515,43 @@
     });
   }
 
-  function changeTrack(direction) {
-    state.trackIndex = (state.trackIndex + direction + tracks.length) % tracks.length;
-    state.trackElapsed = 0;
-    const track = tracks[state.trackIndex];
-    state.bpm = track.bpm;
-    state.energy = track.energy;
-    updateStaticDom();
+  function focusPanel(panel) {
+    document.querySelectorAll(".deck-panel, .right-panel, .command-center").forEach((target) => {
+      target.classList.remove("focused");
+    });
+
+    const map = {
+      now: ".right-panel",
+      timer: ".command-center",
+      playlists: ".playlists-panel",
+      sessions: ".sessions-panel",
+      analytics: ".stats-panel",
+      library: ".playlists-panel",
+      settings: ".visualizer-panel"
+    };
+
+    const target = document.querySelector(map[panel]);
+    if (target) target.classList.add("focused");
+    setSourceStatus(`${panel} panel`);
+  }
+
+  function setStatRange(range) {
+    const data = statRanges[range] || statRanges.week;
+    document.querySelectorAll(".segmented button").forEach((button) => {
+      button.classList.toggle("active", button.dataset.range === range);
+    });
+    el.statHero.innerHTML = `
+      <span>Focus time</span>
+      <strong>${data.time}</strong>
+      <em>${data.delta}</em>
+    `;
+    el.barChart.innerHTML = data.bars.map((heightValue) => `<span style="height:${heightValue}%"></span>`).join("");
+    el.statRow.innerHTML = `
+      <span>Sessions <strong>${data.sessions}</strong></span>
+      <span>Longest streak <strong>${data.streak}</strong></span>
+      <span>Avg focus <strong id="avg-focus">${data.avg}%</strong></span>
+    `;
+    el.avgFocus = document.getElementById("avg-focus");
   }
 
   function updateSessionLabels(name, minutes) {
@@ -336,13 +564,18 @@
     updateSessionLabels(state.sessionName, Math.round(state.duration / 60));
 
     const track = tracks[state.trackIndex];
+    const playlist = playlists[state.activePlaylistIndex];
     el.trackMain.textContent = track.title;
     el.artistMain.textContent = track.artist;
     el.trackTitle.textContent = track.title;
     el.trackArtist.textContent = track.artist;
-    el.bpm.textContent = String(track.bpm);
+    el.bpm.textContent = String(track.bpm || state.bpm);
     el.trackLength.textContent = formatTrackTime(track.duration);
     el.playPause.textContent = state.running ? "II" : "PL";
+    el.playlistTitle.textContent = playlist?.name || "No playlist";
+    el.shuffle.classList.toggle("active", state.shuffle);
+    el.repeat.classList.toggle("active", state.repeat !== "off");
+    el.heart.classList.toggle("active", state.liked);
   }
 
   async function connectSpotify() {
@@ -352,28 +585,147 @@
       return;
     }
 
-    let clientId = localStorage.getItem("tempo.spotify.clientId") || "";
-    if (!clientId) {
-      clientId = window.prompt("Paste your Spotify Client ID. Use redirect URI http://127.0.0.1:17380/callback in the Spotify dashboard.") || "";
-    }
-
-    clientId = clientId.trim();
-    if (!clientId) {
-      pulseButtonLabel(el.spotifyConnect, "Client ID needed");
-      return;
-    }
-
+    const clientId = (localStorage.getItem("tempo.spotify.clientId") || defaultSpotifyClientId).trim();
     localStorage.setItem("tempo.spotify.clientId", clientId);
     el.spotifyConnect.textContent = "Awaiting login";
+    setSourceStatus("Spotify login");
 
     try {
       await window.tempoDesktop.spotifyLogin(clientId);
+      state.spotify.connected = true;
       el.spotifyConnect.textContent = "Spotify linked";
+      await initializeSpotifyPlayer();
+      await loadSpotifyPlaylists();
       await pullSpotifyPlayback();
       startSpotifyPolling();
     } catch (error) {
-      console.error(error);
+      showSpotifyError(error);
       pulseButtonLabel(el.spotifyConnect, "Login failed");
+    }
+  }
+
+  async function resumeSpotifyIfPossible() {
+    if (!window.tempoDesktop?.spotifyAccessToken) return;
+
+    try {
+      const token = await window.tempoDesktop.spotifyAccessToken();
+      if (!token.connected) return;
+      state.spotify.connected = true;
+      el.spotifyConnect.textContent = "Spotify linked";
+      await initializeSpotifyPlayer();
+      await loadSpotifyPlaylists();
+      await pullSpotifyPlayback();
+      startSpotifyPolling();
+    } catch (error) {
+      showSpotifyError(error);
+    }
+  }
+
+  async function initializeSpotifyPlayer() {
+    if (!window.tempoDesktop?.spotifyAccessToken || state.spotify.sdkReady || state.spotify.player) return;
+
+    try {
+      await loadSpotifySdk();
+
+      state.spotify.player = new window.Spotify.Player({
+        name: "TEMPO Cockpit",
+        volume: state.volume / 100,
+        enableMediaSession: true,
+        getOAuthToken: async (callback) => {
+          const token = await window.tempoDesktop.spotifyAccessToken();
+          callback(token.accessToken);
+        }
+      });
+
+      state.spotify.player.addListener("ready", ({ device_id }) => {
+        state.spotify.deviceId = device_id;
+        state.spotify.sdkReady = true;
+        setSourceStatus("TEMPO device ready");
+      });
+
+      state.spotify.player.addListener("not_ready", () => {
+        state.spotify.sdkReady = false;
+        setSourceStatus("TEMPO device offline");
+      });
+
+      ["initialization_error", "authentication_error", "account_error", "playback_error"].forEach((eventName) => {
+        state.spotify.player.addListener(eventName, ({ message }) => {
+          state.spotify.sdkError = message;
+          setSourceStatus(shortStatus(message));
+        });
+      });
+
+      state.spotify.player.addListener("player_state_changed", (playbackState) => {
+        if (!playbackState?.track_window?.current_track) return;
+        applySdkPlayback(playbackState);
+      });
+
+      const connected = await state.spotify.player.connect();
+      state.spotify.sdkReady = Boolean(connected);
+      if (!connected) {
+        setSourceStatus("SDK unavailable");
+      }
+    } catch (error) {
+      state.spotify.sdkError = error.message;
+      setSourceStatus(shortStatus(error.message || "SDK error"));
+    }
+  }
+
+  function loadSpotifySdk() {
+    if (window.Spotify?.Player) return Promise.resolve();
+
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector("script[data-spotify-sdk]");
+      window.onSpotifyWebPlaybackSDKReady = () => resolve();
+
+      if (existing) {
+        const startedAt = Date.now();
+        const waitForSdk = window.setInterval(() => {
+          if (window.Spotify?.Player) {
+            window.clearInterval(waitForSdk);
+            resolve();
+          } else if (Date.now() - startedAt > 12000) {
+            window.clearInterval(waitForSdk);
+            reject(new Error("Spotify Web Playback SDK timed out."));
+          }
+        }, 120);
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://sdk.scdn.co/spotify-player.js";
+      script.async = true;
+      script.dataset.spotifySdk = "true";
+      script.onerror = () => reject(new Error("Could not load Spotify Web Playback SDK."));
+      window.setTimeout(() => {
+        if (!window.Spotify?.Player) {
+          reject(new Error("Spotify Web Playback SDK timed out."));
+        }
+      }, 12000);
+      document.head.appendChild(script);
+    });
+  }
+
+  async function loadSpotifyPlaylists() {
+    if (!window.tempoDesktop?.spotifyPlaylists) return;
+
+    try {
+      const response = await window.tempoDesktop.spotifyPlaylists();
+      if (!response.connected || !Array.isArray(response.items)) return;
+
+      playlists.splice(0, playlists.length, ...response.items.map((playlist, index) => ({
+        name: playlist.name,
+        tracks: playlist.tracks,
+        active: index === 0,
+        contextUri: playlist.uri,
+        artwork: playlist.artwork,
+        externalUrl: playlist.externalUrl
+      })));
+      state.activePlaylistIndex = 0;
+      mountLists();
+      updateStaticDom();
+    } catch (error) {
+      showSpotifyError(error);
     }
   }
 
@@ -383,21 +735,59 @@
     try {
       const playback = await window.tempoDesktop.spotifyCurrentPlayback();
       if (!playback.connected) {
-        el.source.textContent = "Spotify offline";
+        setSourceStatus("Spotify offline");
         return;
       }
 
       if (!playback.active || !playback.track) {
-        el.source.textContent = "No active device";
-        pulseButtonLabel(el.spotifyConnect, "Start Spotify");
+        setSourceStatus(state.spotify.deviceId ? "Press play in TEMPO" : "No active device");
         return;
       }
 
       applySpotifyPlayback(playback);
-      el.source.textContent = playback.device || "Spotify live";
+      setSourceStatus(playback.device || "Spotify live");
     } catch (error) {
-      console.error(error);
-      el.source.textContent = "Spotify error";
+      showSpotifyError(error);
+    }
+  }
+
+  async function playSpotify(options = {}) {
+    if (!state.spotify.connected || !window.tempoDesktop?.spotifyCommand) {
+      return;
+    }
+
+    try {
+      if (state.spotify.deviceId) {
+        await window.tempoDesktop.spotifyCommand({ type: "transfer", deviceId: state.spotify.deviceId, play: false });
+      }
+
+      const playlist = playlists[state.activePlaylistIndex];
+      const track = tracks[state.trackIndex];
+      const command = {
+        type: "play",
+        deviceId: state.spotify.deviceId,
+        contextUri: options.contextUri || playlist?.contextUri || undefined,
+        uris: options.uris || (track.uri ? [track.uri] : undefined)
+      };
+
+      await window.tempoDesktop.spotifyCommand(command);
+      state.spotify.isPlaying = true;
+      setSourceStatus(state.spotify.deviceId ? "Playing in TEMPO" : "Playback started");
+      window.setTimeout(pullSpotifyPlayback, 850);
+    } catch (error) {
+      showSpotifyError(error);
+    }
+  }
+
+  async function pauseSpotify() {
+    if (!state.spotify.connected || !window.tempoDesktop?.spotifyCommand) return;
+
+    try {
+      await window.tempoDesktop.spotifyCommand({ type: "pause", deviceId: state.spotify.deviceId });
+      state.spotify.isPlaying = false;
+      setSourceStatus("Playback paused");
+    } catch (error) {
+      showSpotifyError(error);
     }
   }
 
@@ -408,10 +798,12 @@
       title: playback.track.title,
       artist: playback.track.artist,
       duration,
+      uri: playback.track.uri,
       energy: playback.isPlaying ? 0.68 : 0.38
     };
     state.trackElapsed = Math.round(playback.progressMs / 1000);
     state.energy = playback.isPlaying ? 0.68 : 0.38;
+    state.spotify.isPlaying = playback.isPlaying;
     state.running = state.running || Boolean(playback.isPlaying);
 
     if (playback.track.artwork) {
@@ -419,12 +811,66 @@
       el.albumArt.style.backgroundImage = `url("${playback.track.artwork}")`;
     }
 
+    mountLists();
+    updateStaticDom();
+  }
+
+  function applySdkPlayback(playbackState) {
+    const current = playbackState.track_window.current_track;
+    tracks[state.trackIndex] = {
+      ...tracks[state.trackIndex],
+      title: current.name || "Spotify Track",
+      artist: current.artists?.map((artist) => artist.name).join(", ") || "",
+      duration: Math.max(1, Math.round((playbackState.duration || 0) / 1000)),
+      uri: current.uri,
+      energy: playbackState.paused ? 0.38 : 0.72
+    };
+    state.trackElapsed = Math.round((playbackState.position || 0) / 1000);
+    state.spotify.isPlaying = !playbackState.paused;
+    if (current.album?.images?.length) {
+      el.albumArt.classList.add("spotify-artwork");
+      el.albumArt.style.backgroundImage = `url("${current.album.images[0].url}")`;
+    }
+    mountLists();
     updateStaticDom();
   }
 
   function startSpotifyPolling() {
     window.clearInterval(startSpotifyPolling.timer);
-    startSpotifyPolling.timer = window.setInterval(pullSpotifyPlayback, 15000);
+    startSpotifyPolling.timer = window.setInterval(pullSpotifyPlayback, 12000);
+  }
+
+  function showSpotifyError(error) {
+    const message = friendlySpotifyError(error?.message || String(error));
+    console.error(error);
+    setSourceStatus(message);
+    if (message.includes("403")) {
+      el.spotifyConnect.textContent = "Reauth Spotify";
+    }
+  }
+
+  function friendlySpotifyError(message) {
+    if (message.includes("403")) {
+      return "403 scope/account";
+    }
+    if (message.includes("404")) {
+      return "No device";
+    }
+    if (message.includes("401")) {
+      return "Login expired";
+    }
+    if (message.includes("Premium") || message.includes("premium")) {
+      return "Premium needed";
+    }
+    return shortStatus(message);
+  }
+
+  function setSourceStatus(message) {
+    el.source.textContent = shortStatus(message);
+  }
+
+  function shortStatus(message) {
+    return String(message || "Ready").replace(/^Error:\s*/i, "").slice(0, 18);
   }
 
   function pulseButtonLabel(button, label) {
@@ -453,7 +899,9 @@
     el.energy.textContent = `${Math.round(state.energy * 100)}%`;
     el.focusLevel.textContent = `${focusLevel}%`;
     el.focusMeter.style.width = `${focusLevel}%`;
-    el.avgFocus.textContent = `${Math.round(84 + state.energy * 6)}%`;
+    if (el.avgFocus) {
+      el.avgFocus.textContent = `${Math.round(84 + state.energy * 6)}%`;
+    }
 
     app.style.setProperty("--progress", `${progress * 360}deg`);
     app.style.setProperty("--energy", state.energy.toFixed(3));
@@ -507,6 +955,7 @@
     state.completed = true;
     state.remaining = 0;
     el.completion.hidden = false;
+    pauseSpotify();
     updateStaticDom();
   }
 
@@ -515,7 +964,7 @@
     lastFrame = now;
 
     const track = tracks[state.trackIndex];
-    const beatPhase = (now / 1000) * (state.bpm / 60) * Math.PI * 2;
+    const beatPhase = (now / 1000) * ((track.bpm || state.bpm) / 60) * Math.PI * 2;
     const bass = Math.pow(Math.max(0, Math.sin(beatPhase)), 3);
     const shimmer = Math.sin(now * 0.0017) * 0.5 + 0.5;
     state.bass = bass;
@@ -523,7 +972,9 @@
 
     if (state.running && !state.completed) {
       state.remaining = Math.max(0, state.remaining - delta);
-      state.trackElapsed = (state.trackElapsed + delta) % track.duration;
+      if (!state.spotify.isPlaying) {
+        state.trackElapsed = (state.trackElapsed + delta) % track.duration;
+      }
       updateMilestones();
       if (state.remaining <= 0) {
         completeSession();
@@ -641,6 +1092,23 @@
     };
   }
 
+  function environmentName(id) {
+    return environments.find((environment) => environment.id === id)?.label || "Focus";
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(value).replace(/\(/g, "%28").replace(/\)/g, "%29");
+  }
+
   function formatTime(totalSeconds) {
     const safeSeconds = Math.max(0, Math.round(totalSeconds));
     const minutes = Math.floor(safeSeconds / 60);
@@ -671,8 +1139,10 @@
   makeBars(el.spectrumRight, 72);
   makeBars(el.waveform, 80);
   mountLists();
+  setStatRange("week");
   attachEvents();
   resizeCanvas();
   updateStaticDom();
+  resumeSpotifyIfPossible();
   requestAnimationFrame(tick);
 })();

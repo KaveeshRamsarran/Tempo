@@ -358,6 +358,15 @@ input:focus-visible {
   box-shadow: 0 0 24px var(--accent-soft);
 }
 
+.line-button.active,
+.wide-button.active,
+.icon-button.active {
+  color: #071006;
+  border-color: transparent;
+  background: var(--accent);
+  box-shadow: 0 0 24px var(--accent-soft);
+}
+
 .wide-button {
   width: 100%;
   margin-top: 0.8rem;
@@ -803,10 +812,24 @@ input[type="range"] {
   background-size: contain;
 }
 
+.mini-art.spotify-artwork {
+  background-color: #000000;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
 .album-art.spotify-artwork::before,
 .album-art.spotify-artwork::after,
-.album-art.spotify-artwork span {
+.album-art.spotify-artwork span,
+.mini-art.spotify-artwork::after {
   display: none;
+}
+
+.command-center.focused,
+.right-panel.focused,
+.deck-panel.focused {
+  box-shadow: inset 0 0 0 1px var(--accent-soft), 0 0 34px rgba(216, 255, 63, 0.08);
 }
 
 .now-meta {
@@ -890,6 +913,13 @@ input[type="range"] {
   min-height: 3rem;
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  text-align: left;
+}
+
+.queue-item.active {
+  border-color: rgba(216, 255, 63, 0.38);
+  background: linear-gradient(90deg, var(--accent-soft), rgba(255, 255, 255, 0.015));
 }
 
 .queue-item .mini-art {
