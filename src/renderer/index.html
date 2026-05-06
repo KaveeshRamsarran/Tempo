@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TEMPO</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell" data-environment="deep-work" data-window-mode="ultrawide">
+      <canvas id="tempo-canvas" aria-hidden="true"></canvas>
+      <div class="atmosphere" aria-hidden="true"></div>
+      <div class="scan-grid" aria-hidden="true"></div>
+
+      <nav class="left-rail" aria-label="Primary navigation">
+        <div class="brand-block">
+          <div class="brand-mark">T</div>
+          <div>
+            <h1>TEMPO</h1>
+            <p>focus + music</p>
+          </div>
+        </div>
+
+        <section class="session-card">
+          <div class="label">// Session</div>
+          <button class="title-button" id="edit-session" type="button">Deep Work</button>
+          <p>45 min focus</p>
+        </section>
+
+        <section class="playlist-card">
+          <div class="label">// Playlist</div>
+          <h2>Lofi Essentials</h2>
+          <div class="playlist-strip">
+            <div class="mini-art" aria-hidden="true"></div>
+            <div class="micro-wave" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <span class="spotify-dot">SP</span>
+          </div>
+          <button class="line-button" id="spotify-connect" type="button">Connect Spotify</button>
+        </section>
+
+        <div class="nav-stack">
+          <button class="nav-item active" data-panel="now" type="button"><span></span>Now Playing</button>
+          <button class="nav-item" data-panel="timer" type="button"><span></span>Timer</button>
+          <button class="nav-item" data-panel="playlists" type="button"><span></span>Playlists</button>
+          <button class="nav-item" data-panel="sessions" type="button"><span></span>Sessions</button>
+          <button class="nav-item" data-panel="analytics" type="button"><span></span>Analytics</button>
+          <button class="nav-item" data-panel="library" type="button"><span></span>Library</button>
+          <button class="nav-item" data-panel="settings" type="button"><span></span>Settings</button>
+        </div>
+
+        <section class="operator-card">
+          <div class="avatar" aria-hidden="true"></div>
+          <div>
+            <strong>USER_001</strong>
+            <p>Focus level <span id="focus-level">82%</span></p>
+            <div class="thin-meter"><i id="focus-meter"></i></div>
+          </div>
+        </section>
+      </nav>
+
+      <main class="command-center">
+        <header class="top-command">
+          <div>
+            <div class="label">// Timer</div>
+            <button class="session-heading" id="session-title" type="button">Deep Work</button>
+            <p id="session-subtitle">45 min focus</p>
+          </div>
+
+          <div class="mode-cluster" aria-label="Window modes">
+            <button data-window-mode="immersive" title="Fullscreen immersive mode" type="button">IM</button>
+            <button data-window-mode="ultrawide" class="active" title="Ultrawide cinematic mode" type="button">UW</button>
+            <button data-window-mode="compact" title="Compact desktop mode" type="button">CP</button>
+            <button data-window-mode="overlay" title="Floating overlay mode" type="button">OV</button>
+            <button data-window-mode="mini" title="Mini-player mode" type="button">MI</button>
+          </div>
+        </header>
+
+        <section class="timer-stage" aria-label="Countdown system">
+          <div class="side-spectrum left" aria-hidden="true" id="spectrum-left"></div>
+          <div class="orbital-system" id="orbital-system">
+            <div class="orbit orbit-outer" aria-hidden="true"></div>
+            <div class="orbit orbit-mid" aria-hidden="true"></div>
+            <div class="orbit orbit-inner" aria-hidden="true"></div>
+            <div class="scanner" aria-hidden="true"></div>
+            <div class="timer-core">
+              <span class="status-kicker" id="status-kicker">Remaining</span>
+              <strong id="timer-display">45:00</strong>
+              <small id="timer-caption">Focus session 45:00</small>
+            </div>
+          </div>
+          <div class="side-spectrum right" aria-hidden="true" id="spectrum-right"></div>
+        </section>
+
+        <section class="transport-zone" aria-label="Playback and timer controls">
+          <div class="transport-buttons">
+            <button id="shuffle" class="icon-button" title="Shuffle" type="button">SH</button>
+            <button id="previous-track" class="icon-button" title="Previous track" type="button">PR</button>
+            <button id="play-pause" class="primary-play" title="Start or pause session" type="button">II</button>
+            <button id="next-track" class="icon-button" title="Next track" type="button">NX</button>
+            <button id="repeat" class="icon-button" title="Repeat" type="button">RP</button>
+          </div>
+
+          <div class="track-progress">
+            <span id="elapsed-track">01:17</span>
+            <div class="progress-rail"><i id="track-progress-bar"></i></div>
+            <span id="track-length">03:26</span>
+          </div>
+
+          <div class="track-meta-center">
+            <strong id="track-title-main">Midnight Drive</strong>
+            <p id="track-artist-main">MOON</p>
+          </div>
+
+          <div class="timer-controls">
+            <button id="timer-reset" class="line-button" type="button">Reset</button>
+            <button id="timer-add" class="line-button" type="button">+5 min</button>
+            <label class="volume-control">Volume <input id="volume-slider" type="range" min="0" max="100" value="72" /></label>
+          </div>
+        </section>
+      </main>
+
+      <aside class="right-panel">
+        <div class="label">// Now Playing</div>
+        <div class="album-frame">
+          <div class="album-art" id="album-art" aria-label="Procedural album artwork">
+            <span></span>
+          </div>
+        </div>
+        <div class="now-meta">
+          <div>
+            <h2 id="track-title">Midnight Drive</h2>
+            <p id="track-artist">MOON</p>
+          </div>
+          <button class="heart-button active" title="Save track" type="button">HV</button>
+        </div>
+        <div class="waveform-line" aria-hidden="true" id="waveform-line"></div>
+        <div class="metadata-grid">
+          <span>BPM <strong id="bpm-readout">78</strong></span>
+          <span>Energy <strong id="energy-readout">64%</strong></span>
+          <span>Source <strong id="source-readout">Spotify layer</strong></span>
+        </div>
+
+        <section class="queue-block">
+          <div class="label">// Next Up</div>
+          <div id="queue-list"></div>
+          <button class="wide-button" type="button">View Playlist</button>
+        </section>
+      </aside>
+
+      <section class="lower-deck" aria-label="Desktop cockpit panels">
+        <article class="deck-panel sessions-panel">
+          <header>
+            <div class="label">// Sessions</div>
+            <button class="line-button small" type="button">+ New</button>
+          </header>
+          <div id="session-list"></div>
+        </article>
+
+        <article class="deck-panel playlists-panel">
+          <header>
+            <div class="label">// Playlists</div>
+            <button class="line-button small" type="button">+ New</button>
+          </header>
+          <div id="playlist-list"></div>
+        </article>
+
+        <article class="deck-panel presets-panel">
+          <header>
+            <div class="label">// Timer Presets</div>
+          </header>
+          <div id="preset-grid"></div>
+        </article>
+
+        <article class="deck-panel visualizer-panel">
+          <header>
+            <div class="label">// Visualizer</div>
+            <span id="reactivity-label">Beat reactivity high</span>
+          </header>
+          <div class="reactor-mini" id="reactor-mini" aria-hidden="true">
+            <span></span>
+          </div>
+          <div class="visualizer-tabs" id="environment-tabs"></div>
+        </article>
+
+        <article class="deck-panel stats-panel">
+          <header>
+            <div class="label">// Stats</div>
+            <div class="segmented">
+              <button class="active" type="button">Week</button>
+              <button type="button">Month</button>
+              <button type="button">All Time</button>
+            </div>
+          </header>
+          <div class="stat-hero">
+            <span>Focus time</span>
+            <strong>12H 42M</strong>
+            <em>+18% from last week</em>
+          </div>
+          <div class="bar-chart" id="bar-chart" aria-hidden="true"></div>
+          <footer class="stat-row">
+            <span>Sessions <strong>14</strong></span>
+            <span>Longest streak <strong>7 days</strong></span>
+            <span>Avg focus <strong id="avg-focus">87%</strong></span>
+          </footer>
+        </article>
+      </section>
+
+      <div class="completion-sequence" id="completion-sequence" hidden>
+        <div>
+          <span>// Session complete</span>
+          <strong>Tempo lock achieved</strong>
+          <p>Focus time captured. Playback remains armed.</p>
+          <button class="wide-button" id="completion-close" type="button">Return to cockpit</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

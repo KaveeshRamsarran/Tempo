@@ -1,0 +1,25 @@
+{
+  "name": "tempo",
+  "version": "0.1.0",
+  "description": "TEMPO - a cinematic music-reactive countdown desktop environment.",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/launch-electron.js",
+    "dev": "node scripts/launch-electron.js",
+    "check:static": "node --check electron/main.js && node --check electron/preload.js && node --check src/renderer/app.js && node --check scripts/launch-electron.js"
+  },
+  "keywords": [
+    "desktop",
+    "electron",
+    "timer",
+    "music",
+    "focus",
+    "visualizer"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}
