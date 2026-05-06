@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node scripts/launch-electron.js",
     "dev": "node scripts/launch-electron.js",
-    "check:static": "node --check electron/main.js && node --check electron/preload.js && node --check src/renderer/app.js && node --check scripts/launch-electron.js"
+    "check:static": "node --check electron/main.js && node --check electron/preload.js && node --check src/renderer/app.js && node --check scripts/launch-electron.js && node --check scripts/livecheck.js && node --check scripts/livecheck-electron.js && node --check scripts/livecheck-preload.js",
+    "check:live": "node scripts/livecheck.js"
   },
   "keywords": [
     "desktop",

@@ -8,7 +8,11 @@ contextBridge.exposeInMainWorld("tempoDesktop", {
   spotifyAccessToken: () => ipcRenderer.invoke("tempo:spotify-access-token"),
   spotifyCommand: (command) => ipcRenderer.invoke("tempo:spotify-command", command),
   spotifyCurrentPlayback: () => ipcRenderer.invoke("tempo:spotify-current-playback"),
+  spotifyDiagnostics: () => ipcRenderer.invoke("tempo:spotify-diagnostics"),
+  spotifyDisconnect: () => ipcRenderer.invoke("tempo:spotify-disconnect"),
   spotifyPlaylists: () => ipcRenderer.invoke("tempo:spotify-playlists"),
+  spotifySearch: (query) => ipcRenderer.invoke("tempo:spotify-search", query),
+  spotifyTracks: () => ipcRenderer.invoke("tempo:spotify-tracks"),
   onNativeMode: (callback) => {
     ipcRenderer.on("tempo:native-mode", (_event, mode) => callback(mode));
   }
